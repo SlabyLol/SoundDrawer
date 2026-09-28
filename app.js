@@ -112,7 +112,7 @@
 
   function makeBandFreqs(minFreq, maxFreq, height) {
     const span = maxFreq - minFreq;
-    const gap = span * 0.04;
+    const gap = span * 0.02;
     const band = (span - 2 * gap) / 3;
     const r0 = minFreq, r1 = minFreq + band;
     const g0 = r1 + gap, g1 = g0 + band;
@@ -134,7 +134,7 @@
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
-      const maxW = 400, maxH = 300;
+      const maxW = 640, maxH = 480;
       let w = img.width, h = img.height;
       const ratio = Math.min(maxW / w, maxH / h, 1);
       w = Math.round(w * ratio);
@@ -167,17 +167,17 @@
   function generateSoundFromImage() {
     if (!imageData) return;
 
-    const duration = parseFloat(durationInput.value) || 6;
+    const duration = parseFloat(durationInput.value) || 8;
     const minFreq = parseFloat(minFreqInput.value) || 200;
     const maxFreq = parseFloat(maxFreqInput.value) || 20000;
-    const sampleRate = parseInt(sampleRateSelect.value, 10) || 44100;
+    const sampleRate = parseInt(sampleRateSelect.value, 10) || 48000;
     lastMinFreq = minFreq;
     lastMaxFreq = maxFreq;
 
     let width = imageData.width;
     let height = imageData.height;
-    const maxW = 180;
-    const maxH = 140;
+    const maxW = 320;
+    const maxH = 240;
     if (width > maxW || height > maxH) {
       const ratio = Math.min(maxW / width, maxH / height);
       width = Math.max(1, Math.round(width * ratio));
@@ -220,14 +220,14 @@
       const endS = Math.floor((x + 1) * samplesPerColumn);
       const colLen = endS - startS;
       if (colLen <= 0) continue;
-      const fade = Math.min(100, Math.floor(colLen / 4));
+      const fade = Math.min(48, Math.floor(colLen / 6));
 
       for (let y = 0; y < height; y++) {
         const pi = (y * width + x) * 4;
         const aR = pixels[pi] / 255;
         const aG = pixels[pi + 1] / 255;
         const aB = pixels[pi + 2] / 255;
-        if (aR + aG + aB < 0.04) continue;
+        if (aR + aG + aB < 0.02) continue;
 
         for (let s = startS; s < endS; s++) {
           const local = s - startS;
@@ -342,7 +342,7 @@
         if (exportImageBtn) exportImageBtn.disabled = false;
         playImportedBtn.disabled = false;
         if (!lastFreqR) {
-          const h = lastImgH > 0 ? lastImgH : 140;
+          const h = lastImgH > 0 ? lastImgH : 240;
           const bands = makeBandFreqs(
             parseFloat(minFreqInput.value) || 200,
             parseFloat(maxFreqInput.value) || 20000,
@@ -489,8 +489,8 @@
     const minFreq = lastMinFreq || parseFloat(minFreqInput.value) || 200;
     const maxFreq = lastMaxFreq || parseFloat(maxFreqInput.value) || 20000;
 
-    const imgW = lastImgW > 0 ? lastImgW : 180;
-    const imgH = lastImgH > 0 ? lastImgH : 140;
+    const imgW = lastImgW > 0 ? lastImgW : 320;
+    const imgH = lastImgH > 0 ? lastImgH : 240;
 
     let freqR = lastFreqR;
     let freqG = lastFreqG;
@@ -502,8 +502,8 @@
       freqB = bands.freqB;
     }
 
-    const fftSize = 8192;
-    const hop = Math.max(32, Math.floor(data.length / (imgW * 4)));
+    const fftSize = 16384;
+    const hop = Math.max(16, Math.floor(data.length / (imgW * 8)));
     const numFrames = Math.max(1, Math.floor((data.length - fftSize) / hop) + 1);
     const numBins = fftSize / 2;
 
@@ -544,21 +544,27 @@
       const fi = Math.min(numFrames - 1, Math.round((x / Math.max(1, imgW - 1)) * (numFrames - 1)));
       const m = magnitudes[fi];
       for (let y = 0; y < imgH; y++) {
-        if (m[binR[y]] > maxR) maxR = m[binR[y]];
-        if (m[binG[y]] > maxG) maxG = m[binG[y]];
-        if (m[binB[y]] > maxB) maxB = m[binB[y]];
+        const rPeak = Math.max(m[binR[y]], m[Math.max(0, binR[y]-1)] || 0, m[Math.min(m.length-1, binR[y]+1)] || 0);
+        const gPeak = Math.max(m[binG[y]], m[Math.max(0, binG[y]-1)] || 0, m[Math.min(m.length-1, binG[y]+1)] || 0);
+        const bPeak = Math.max(m[binB[y]], m[Math.max(0, binB[y]-1)] || 0, m[Math.min(m.length-1, binB[y]+1)] || 0);
+        if (rPeak > maxR) maxR = rPeak;
+        if (gPeak > maxG) maxG = gPeak;
+        if (bPeak > maxB) maxB = bPeak;
       }
     }
 
-    const gamma = 0.5;
+    const gamma = 0.45;
     const cols = new Uint8Array(imgW * imgH * 3);
     for (let x = 0; x < imgW; x++) {
       const fi = Math.min(numFrames - 1, Math.round((x / Math.max(1, imgW - 1)) * (numFrames - 1)));
       const m = magnitudes[fi];
       for (let y = 0; y < imgH; y++) {
-        let r = Math.pow(Math.min(1, m[binR[y]] / maxR), gamma);
-        let g = Math.pow(Math.min(1, m[binG[y]] / maxG), gamma);
-        let b = Math.pow(Math.min(1, m[binB[y]] / maxB), gamma);
+        const rV = Math.max(m[binR[y]], m[Math.max(0, binR[y]-1)] || 0, m[Math.min(m.length-1, binR[y]+1)] || 0);
+        const gV = Math.max(m[binG[y]], m[Math.max(0, binG[y]-1)] || 0, m[Math.min(m.length-1, binG[y]+1)] || 0);
+        const bV = Math.max(m[binB[y]], m[Math.max(0, binB[y]-1)] || 0, m[Math.min(m.length-1, binB[y]+1)] || 0);
+        let r = Math.pow(Math.min(1, rV / maxR), gamma);
+        let g = Math.pow(Math.min(1, gV / maxG), gamma);
+        let b = Math.pow(Math.min(1, bV / maxB), gamma);
         const avg = (r + g + b) / 3;
         const sat = 1.15;
         r = Math.min(1, Math.max(0, avg + (r - avg) * sat));
@@ -571,13 +577,15 @@
       }
     }
 
-    const scale = Math.max(2, Math.floor(Math.min(4, 800 / imgW, 500 / imgH)));
+    const scale = Math.max(2, Math.floor(Math.min(3, 960 / imgW, 600 / imgH)));
     const canvasW = imgW * scale;
     const canvasH = imgH * scale;
     drawCanvas.width = canvasW;
     drawCanvas.height = canvasH;
     drawCtx.fillStyle = "#000";
     drawCtx.fillRect(0, 0, canvasW, canvasH);
+
+    if (exportImageBtn) exportImageBtn.disabled = false;
 
     const ctx = getAudioContext();
     playBuffer(buffer);
