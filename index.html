@@ -10,7 +10,7 @@
   <div class="app">
     <header>
       <h1>SoundDrawer</h1>
-      <p class="subtitle">Upload an image → hear it as sound · Export / Import WAV · Draw the waveform &amp; spectrogram</p>
+      <p class="subtitle">Upload an image → hear it as sound · Export / Import WAV · Draw waveform, spectrogram or reconstruct the image</p>
     </header>
 
     <main>
@@ -62,9 +62,10 @@
         <div class="draw-controls">
           <button id="draw-waveform-btn" disabled>Draw Waveform</button>
           <button id="draw-spectrogram-btn" disabled>Draw Spectrogram</button>
+          <button id="draw-image-btn" disabled>Draw Image from Sound</button>
           <button id="play-imported-btn" disabled>Play Imported</button>
         </div>
-        <canvas id="draw-canvas" width="800" height="300"></canvas>
+        <canvas id="draw-canvas" width="800" height="400"></canvas>
       </section>
     </main>
 
