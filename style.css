@@ -1,0 +1,188 @@
+:root {
+  --bg: #0f0f13;
+  --panel: #1a1a24;
+  --border: #2e2e3e;
+  --text: #e8e8f0;
+  --muted: #9a9ab0;
+  --accent: #6c5ce7;
+  --accent-hover: #a29bfe;
+  --success: #00b894;
+  --danger: #ff7675;
+  --radius: 12px;
+  --font: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  line-height: 1.5;
+}
+
+.app {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+header h1 {
+  font-size: 2.4rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, #a29bfe, #74b9ff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.subtitle {
+  color: var(--muted);
+  margin-top: 0.4rem;
+  font-size: 1rem;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  margin-bottom: 1.75rem;
+}
+
+.panel h2 {
+  font-size: 1.15rem;
+  margin-bottom: 1rem;
+  color: var(--accent-hover);
+}
+
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 2rem 1rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  color: var(--muted);
+  margin-bottom: 1.25rem;
+}
+
+.drop-zone:hover,
+.drop-zone.dragover {
+  border-color: var(--accent);
+  background: rgba(108, 92, 231, 0.08);
+  color: var(--text);
+}
+
+.preview-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+#image-canvas {
+  background: #000;
+  border-radius: 8px;
+  max-width: 100%;
+  border: 1px solid var(--border);
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 200px;
+  flex: 1;
+}
+
+.controls label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.85rem;
+  color: var(--muted);
+  gap: 0.25rem;
+}
+
+.controls input,
+.controls select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 0.45rem 0.6rem;
+  font-size: 0.95rem;
+}
+
+.controls input:focus,
+.controls select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+
+button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.draw-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+#draw-canvas {
+  width: 100%;
+  background: #000;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  display: block;
+}
+
+footer {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-top: 1rem;
+}
+
+@media (max-width: 600px) {
+  header h1 {
+    font-size: 1.8rem;
+  }
+  .preview-row {
+    flex-direction: column;
+  }
+}
