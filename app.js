@@ -29,9 +29,8 @@
   let lastImgH = 0;
   let animFrameId = null;
   let playStartTime = 0;
-
-  const FFT_SIZE = 2048;
-  const HOP = 256;
+  let lastMinFreq = 200;
+  let lastMaxFreq = 8000;
 
   function getAudioContext() {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -99,16 +98,6 @@
     }
   }
 
-  function ifft(re, im) {
-    for (let i = 0; i < re.length; i++) im[i] = -im[i];
-    fft(re, im);
-    const n = re.length;
-    for (let i = 0; i < n; i++) {
-      re[i] /= n;
-      im[i] = -im[i] / n;
-    }
-  }
-
   function hannWindow(n) {
     const w = new Float32Array(n);
     for (let i = 0; i < n; i++) {
@@ -122,7 +111,7 @@
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
-      const maxW = 480, maxH = 360;
+      const maxW = 400, maxH = 300;
       let w = img.width, h = img.height;
       const ratio = Math.min(maxW / w, maxH / h, 1);
       w = Math.round(w * ratio);
@@ -155,15 +144,18 @@
   function generateSoundFromImage() {
     if (!imageData) return;
 
-    const duration = parseFloat(durationInput.value) || 5;
-    const minFreq = parseFloat(minFreqInput.value) || 150;
-    const maxFreq = parseFloat(maxFreqInput.value) || 10000;
+    const duration = parseFloat(durationInput.value) || 6;
+    const minFreq = parseFloat(minFreqInput.value) || 200;
+    const maxFreq = parseFloat(maxFreqInput.value) || 8000;
     const sampleRate = parseInt(sampleRateSelect.value, 10) || 44100;
+    lastMinFreq = minFreq;
+    lastMaxFreq = maxFreq;
 
     let width = imageData.width;
     let height = imageData.height;
-    const maxW = 320;
-    const maxH = 256;
+
+    const maxW = 200;
+    const maxH = 160;
     if (width > maxW || height > maxH) {
       const ratio = Math.min(maxW / width, maxH / height);
       width = Math.max(1, Math.round(width * ratio));
@@ -182,30 +174,10 @@
     lastImgW = width;
     lastImgH = height;
 
-    const numBins = FFT_SIZE / 2;
-    let binLow = Math.max(1, Math.round((minFreq / sampleRate) * FFT_SIZE));
-    let binHigh = Math.min(numBins - 1, Math.round((maxFreq / sampleRate) * FFT_SIZE));
-    let binSpan = Math.max(1, binHigh - binLow);
-
-    if (height > binSpan + 1) {
-      const newH = binSpan + 1;
-      const tmp = document.createElement("canvas");
-      tmp.width = width;
-      tmp.height = newH;
-      const tctx = tmp.getContext("2d");
-      tctx.imageSmoothingEnabled = true;
-      tctx.drawImage(imageCanvas, 0, 0, width, newH);
-      imageData = tctx.getImageData(0, 0, width, newH);
-      height = newH;
-      lastImgH = height;
-      imageCanvas.height = height;
-      imageCtx.putImageData(imageData, 0, 0);
-    }
-
-    const rowToBin = new Int32Array(height);
+    const freqs = new Float32Array(height);
     for (let y = 0; y < height; y++) {
       const t = height === 1 ? 0.5 : 1 - y / (height - 1);
-      rowToBin[y] = binLow + Math.round(t * binSpan);
+      freqs[y] = minFreq + t * (maxFreq - minFreq);
     }
 
     const pixels = imageData.data;
@@ -215,65 +187,52 @@
       bright[i] = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
     }
 
-    const targetSamples = Math.floor(duration * sampleRate);
-    const hop = Math.max(64, Math.floor((targetSamples - FFT_SIZE) / Math.max(1, width - 1)));
-    const totalSamples = (width - 1) * hop + FFT_SIZE;
+    const samples = Math.floor(duration * sampleRate);
+    const samplesPerColumn = samples / width;
+    const audio = new Float32Array(samples);
 
-    const audio = new Float32Array(totalSamples);
-    const windowNorm = new Float32Array(totalSamples);
-    const win = hannWindow(FFT_SIZE);
-    const re = new Float32Array(FFT_SIZE);
-    const im = new Float32Array(FFT_SIZE);
+    const phaseInc = new Float32Array(height);
+    for (let y = 0; y < height; y++) {
+      phaseInc[y] = (2 * Math.PI * freqs[y]) / sampleRate;
+    }
 
     for (let x = 0; x < width; x++) {
-      re.fill(0);
-      im.fill(0);
+      const startS = Math.floor(x * samplesPerColumn);
+      const endS = Math.floor((x + 1) * samplesPerColumn);
+      const colLen = endS - startS;
+      if (colLen <= 0) continue;
+      const fade = Math.min(120, Math.floor(colLen / 4));
 
       for (let y = 0; y < height; y++) {
         const amp = bright[y * width + x];
-        if (amp < 0.02) continue;
-        const bin = rowToBin[y];
-        const phase = (2 * Math.PI * bin * x) / width;
-        re[bin] += amp * Math.cos(phase);
-        im[bin] += amp * Math.sin(phase);
+        if (amp < 0.05) continue;
+        const inc = phaseInc[y];
+        for (let s = startS; s < endS; s++) {
+          const local = s - startS;
+          let env = 1;
+          if (local < fade) env = local / fade;
+          else if (local > colLen - fade) env = (colLen - local) / fade;
+          audio[s] += amp * env * Math.sin(inc * s);
+        }
       }
-      for (let bin = 1; bin < numBins; bin++) {
-        re[FFT_SIZE - bin] = re[bin];
-        im[FFT_SIZE - bin] = -im[bin];
-      }
-      re[0] = 0;
-      im[0] = 0;
-
-      ifft(re, im);
-
-      const offset = x * hop;
-      for (let i = 0; i < FFT_SIZE; i++) {
-        const idx = offset + i;
-        if (idx >= totalSamples) break;
-        audio[idx] += re[i] * win[i];
-        windowNorm[idx] += win[i] * win[i];
-      }
-    }
-
-    for (let i = 0; i < totalSamples; i++) {
-      if (windowNorm[i] > 1e-8) audio[i] /= windowNorm[i];
     }
 
     let peak = 0;
-    for (let i = 0; i < totalSamples; i++) {
+    for (let i = 0; i < samples; i++) {
       const a = Math.abs(audio[i]);
       if (a > peak) peak = a;
     }
     if (peak > 0) {
-      const sc = 0.9 / peak;
-      for (let i = 0; i < totalSamples; i++) audio[i] *= sc;
+      const sc = 0.88 / peak;
+      for (let i = 0; i < samples; i++) audio[i] *= sc;
     }
 
     const ctx = getAudioContext();
-    generatedBuffer = ctx.createBuffer(1, totalSamples, sampleRate);
+    generatedBuffer = ctx.createBuffer(1, samples, sampleRate);
     generatedBuffer.copyToChannel(audio, 0);
-    generatedBuffer._hop = hop;
-    generatedBuffer._fftSize = FFT_SIZE;
+    generatedBuffer._freqs = freqs;
+    generatedBuffer._height = height;
+    generatedBuffer._width = width;
 
     playBtn.disabled = false;
     stopBtn.disabled = false;
@@ -478,11 +437,14 @@
     const sampleRate = buffer.sampleRate;
     const data = buffer.getChannelData(0);
     const duration = buffer.duration;
-    const minFreq = parseFloat(minFreqInput.value) || 150;
-    const maxFreq = parseFloat(maxFreqInput.value) || 10000;
+    const minFreq = lastMinFreq || parseFloat(minFreqInput.value) || 200;
+    const maxFreq = lastMaxFreq || parseFloat(maxFreqInput.value) || 8000;
 
-    const fftSize = buffer._fftSize || FFT_SIZE;
-    const hop = buffer._hop || HOP;
+    const imgW = lastImgW > 0 ? lastImgW : 200;
+    const imgH = lastImgH > 0 ? lastImgH : 160;
+
+    const fftSize = 8192;
+    const hop = Math.max(32, Math.floor(data.length / (imgW * 4)));
     const numFrames = Math.max(1, Math.floor((data.length - fftSize) / hop) + 1);
     const numBins = fftSize / 2;
 
@@ -505,21 +467,11 @@
       magnitudes[f] = mags;
     }
 
-    const imgW = lastImgW > 0 ? lastImgW : Math.min(320, numFrames);
-    const imgH = lastImgH > 0 ? lastImgH : 256;
-    const scale = Math.max(2, Math.floor(Math.min(3, 900 / imgW, 500 / imgH)));
-    const canvasW = imgW * scale;
-    const canvasH = imgH * scale;
-    drawCanvas.width = canvasW;
-    drawCanvas.height = canvasH;
-
-    const binLow = Math.max(1, Math.round((minFreq / sampleRate) * fftSize));
-    const binHigh = Math.min(numBins - 1, Math.round((maxFreq / sampleRate) * fftSize));
-    const binSpan = Math.max(1, binHigh - binLow);
     const rowBin = new Int32Array(imgH);
     for (let y = 0; y < imgH; y++) {
       const t = imgH === 1 ? 0.5 : 1 - y / (imgH - 1);
-      rowBin[y] = binLow + Math.round(t * binSpan);
+      const freq = minFreq + t * (maxFreq - minFreq);
+      rowBin[y] = Math.max(1, Math.min(numBins - 1, Math.round((freq / sampleRate) * fftSize)));
     }
 
     let maxMag = 1e-8;
@@ -532,18 +484,23 @@
       }
     }
 
-    const gamma = 0.5;
+    const gamma = 0.55;
     const cols = new Uint8Array(imgW * imgH);
     for (let x = 0; x < imgW; x++) {
       const fi = Math.min(numFrames - 1, Math.round((x / Math.max(1, imgW - 1)) * (numFrames - 1)));
       const m = magnitudes[fi];
       for (let y = 0; y < imgH; y++) {
         let v = m[rowBin[y]] / maxMag;
-        v = Math.pow(Math.min(1, v), gamma);
+        v = Math.pow(Math.min(1, Math.max(0, v)), gamma);
         cols[x * imgH + y] = Math.floor(v * 255);
       }
     }
 
+    const scale = Math.max(2, Math.floor(Math.min(4, 800 / imgW, 500 / imgH)));
+    const canvasW = imgW * scale;
+    const canvasH = imgH * scale;
+    drawCanvas.width = canvasW;
+    drawCanvas.height = canvasH;
     drawCtx.fillStyle = "#000";
     drawCtx.fillRect(0, 0, canvasW, canvasH);
 
