@@ -19,6 +19,7 @@
   const audioInput = document.getElementById("audio-input");
   const drawWaveformBtn = document.getElementById("draw-waveform-btn");
   const drawSpectrogramBtn = document.getElementById("draw-spectrogram-btn");
+  const drawImageBtn = document.getElementById("draw-image-btn");
   const playImportedBtn = document.getElementById("play-imported-btn");
   const drawCanvas = document.getElementById("draw-canvas");
   const drawCtx = drawCanvas.getContext("2d");
@@ -257,9 +258,10 @@
         importedBuffer = await ctx.decodeAudioData(e.target.result.slice(0));
         drawWaveformBtn.disabled = false;
         drawSpectrogramBtn.disabled = false;
+        drawImageBtn.disabled = false;
         playImportedBtn.disabled = false;
-        // Auto-draw waveform
-        drawWaveform(importedBuffer);
+        // Auto-draw reconstructed image from sound
+        drawImageFromSound(importedBuffer);
       } catch (err) {
         console.error(err);
         alert("Could not decode audio file. Please use a valid WAV or other supported format.");
@@ -416,6 +418,107 @@
       drawSpectrogram(importedBuffer);
       drawSpectrogramBtn.textContent = "Draw Spectrogram";
       drawSpectrogramBtn.disabled = false;
+    }, 30);
+  });
+
+  // ---------- Draw Image from Sound (reconstruct spectrogram as grayscale image) ----------
+  function drawImageFromSound(buffer) {
+    const sampleRate = buffer.sampleRate;
+    const data = buffer.getChannelData(0);
+    const minFreq = parseFloat(minFreqInput.value) || 200;
+    const maxFreq = parseFloat(maxFreqInput.value) || 8000;
+
+    // Use same STFT parameters as spectrogram for consistency
+    const fftSize = 512;
+    const hop = 128;
+    const numFrames = Math.max(1, Math.floor((data.length - fftSize) / hop));
+    const numBins = fftSize / 2;
+
+    // Frequency range we care about (match generation mapping)
+    const logMin = Math.log(minFreq);
+    const logMax = Math.log(maxFreq);
+
+    // Collect magnitude for each frame × bin in the relevant frequency range
+    const magnitudes = [];
+    let globalMax = 0;
+
+    for (let f = 0; f < numFrames; f++) {
+      const frame = new Float32Array(fftSize);
+      for (let i = 0; i < fftSize; i++) {
+        const w = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (fftSize - 1)));
+        frame[i] = (data[f * hop + i] || 0) * w;
+      }
+
+      // Magnitude spectrum (naive real DFT – ok for short clips)
+      const mags = new Float32Array(numBins);
+      for (let k = 0; k < numBins; k++) {
+        let re = 0, im = 0;
+        for (let n = 0; n < fftSize; n++) {
+          const angle = (2 * Math.PI * k * n) / fftSize;
+          re += frame[n] * Math.cos(angle);
+          im -= frame[n] * Math.sin(angle);
+        }
+        mags[k] = Math.sqrt(re * re + im * im);
+      }
+      magnitudes.push(mags);
+    }
+
+    // Map frequency bins to image rows using log scale (same as generation)
+    const imgW = Math.min(800, numFrames);
+    const imgH = 256;
+    drawCanvas.width = imgW;
+    drawCanvas.height = imgH;
+
+    const imgData = drawCtx.createImageData(imgW, imgH);
+
+    // Precompute which bin corresponds to each image row (top = high freq)
+    const binForRow = new Int32Array(imgH);
+    for (let y = 0; y < imgH; y++) {
+      const t = 1 - y / (imgH - 1); // 1 at top, 0 at bottom
+      const targetFreq = Math.exp(logMin + t * (logMax - logMin));
+      const bin = Math.round((targetFreq / (sampleRate / 2)) * (numBins - 1));
+      binForRow[y] = Math.max(0, Math.min(numBins - 1, bin));
+    }
+
+    // Find max magnitude in the used bins for normalization
+    for (let x = 0; x < imgW; x++) {
+      const frameIdx = Math.floor((x / imgW) * numFrames);
+      const mags = magnitudes[frameIdx];
+      for (let y = 0; y < imgH; y++) {
+        const v = mags[binForRow[y]];
+        if (v > globalMax) globalMax = v;
+      }
+    }
+    if (globalMax < 1e-8) globalMax = 1;
+
+    // Draw grayscale image (bright = strong energy at that frequency/time)
+    for (let x = 0; x < imgW; x++) {
+      const frameIdx = Math.floor((x / imgW) * numFrames);
+      const mags = magnitudes[frameIdx];
+      for (let y = 0; y < imgH; y++) {
+        let val = mags[binForRow[y]] / globalMax;
+        // Mild gamma to improve contrast
+        val = Math.pow(Math.min(1, val), 0.55);
+        const gray = Math.floor(val * 255);
+        const idx = (y * imgW + x) * 4;
+        imgData.data[idx] = gray;
+        imgData.data[idx + 1] = gray;
+        imgData.data[idx + 2] = gray;
+        imgData.data[idx + 3] = 255;
+      }
+    }
+
+    drawCtx.putImageData(imgData, 0, 0);
+  }
+
+  drawImageBtn.addEventListener("click", () => {
+    if (!importedBuffer) return;
+    drawImageBtn.textContent = "Drawing…";
+    drawImageBtn.disabled = true;
+    setTimeout(() => {
+      drawImageFromSound(importedBuffer);
+      drawImageBtn.textContent = "Draw Image from Sound";
+      drawImageBtn.disabled = false;
     }, 30);
   });
 })();
