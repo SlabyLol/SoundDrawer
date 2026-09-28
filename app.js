@@ -58,6 +58,10 @@
     source.onended = () => { currentSource = null; };
   }
 
+  function getActiveBuffer() {
+    return importedBuffer || generatedBuffer;
+  }
+
   // ---------- Image loading ----------
   function loadImage(file) {
     if (!file || !file.type.startsWith("image/")) return;
@@ -172,6 +176,15 @@
     playBtn.disabled = false;
     stopBtn.disabled = false;
     exportBtn.disabled = false;
+
+    // Also enable draw buttons for the generated sound (no need to re-import)
+    drawWaveformBtn.disabled = false;
+    drawSpectrogramBtn.disabled = false;
+    drawImageBtn.disabled = false;
+    playImportedBtn.disabled = false;
+
+    // Auto-draw the reconstructed image from the generated sound
+    drawImageFromSound(generatedBuffer);
   }
 
   generateBtn.addEventListener("click", () => {
@@ -286,7 +299,8 @@
   });
 
   playImportedBtn.addEventListener("click", () => {
-    if (importedBuffer) playBuffer(importedBuffer);
+    const buf = getActiveBuffer();
+    if (buf) playBuffer(buf);
   });
 
   // ---------- Draw Waveform ----------
@@ -328,7 +342,8 @@
   }
 
   drawWaveformBtn.addEventListener("click", () => {
-    if (importedBuffer) drawWaveform(importedBuffer);
+    const buf = getActiveBuffer();
+    if (buf) drawWaveform(buf);
   });
 
   // ---------- Draw Spectrogram (simple STFT magnitude) ----------
@@ -411,11 +426,12 @@
   }
 
   drawSpectrogramBtn.addEventListener("click", () => {
-    if (!importedBuffer) return;
+    const buf = getActiveBuffer();
+    if (!buf) return;
     drawSpectrogramBtn.textContent = "Drawing…";
     drawSpectrogramBtn.disabled = true;
     setTimeout(() => {
-      drawSpectrogram(importedBuffer);
+      drawSpectrogram(buf);
       drawSpectrogramBtn.textContent = "Draw Spectrogram";
       drawSpectrogramBtn.disabled = false;
     }, 30);
@@ -512,11 +528,12 @@
   }
 
   drawImageBtn.addEventListener("click", () => {
-    if (!importedBuffer) return;
+    const buf = getActiveBuffer();
+    if (!buf) return;
     drawImageBtn.textContent = "Drawing…";
     drawImageBtn.disabled = true;
     setTimeout(() => {
-      drawImageFromSound(importedBuffer);
+      drawImageFromSound(buf);
       drawImageBtn.textContent = "Draw Image from Sound";
       drawImageBtn.disabled = false;
     }, 30);
