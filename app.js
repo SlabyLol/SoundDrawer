@@ -30,7 +30,10 @@
   let animFrameId = null;
   let playStartTime = 0;
   let lastMinFreq = 200;
-  let lastMaxFreq = 8000;
+  let lastMaxFreq = 12000;
+  let lastFreqR = null;
+  let lastFreqG = null;
+  let lastFreqB = null;
 
   function getAudioContext() {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -106,6 +109,25 @@
     return w;
   }
 
+  function makeBandFreqs(minFreq, maxFreq, height) {
+    const span = maxFreq - minFreq;
+    const gap = span * 0.04;
+    const band = (span - 2 * gap) / 3;
+    const r0 = minFreq, r1 = minFreq + band;
+    const g0 = r1 + gap, g1 = g0 + band;
+    const b0 = g1 + gap, b1 = maxFreq;
+    const freqR = new Float32Array(height);
+    const freqG = new Float32Array(height);
+    const freqB = new Float32Array(height);
+    for (let y = 0; y < height; y++) {
+      const t = height === 1 ? 0.5 : 1 - y / (height - 1);
+      freqR[y] = r0 + t * (r1 - r0);
+      freqG[y] = g0 + t * (g1 - g0);
+      freqB[y] = b0 + t * (b1 - b0);
+    }
+    return { freqR, freqG, freqB };
+  }
+
   function loadImage(file) {
     if (!file || !file.type.startsWith("image/")) return;
     const url = URL.createObjectURL(file);
@@ -146,16 +168,15 @@
 
     const duration = parseFloat(durationInput.value) || 6;
     const minFreq = parseFloat(minFreqInput.value) || 200;
-    const maxFreq = parseFloat(maxFreqInput.value) || 8000;
+    const maxFreq = parseFloat(maxFreqInput.value) || 12000;
     const sampleRate = parseInt(sampleRateSelect.value, 10) || 44100;
     lastMinFreq = minFreq;
     lastMaxFreq = maxFreq;
 
     let width = imageData.width;
     let height = imageData.height;
-
-    const maxW = 200;
-    const maxH = 160;
+    const maxW = 180;
+    const maxH = 140;
     if (width > maxW || height > maxH) {
       const ratio = Math.min(maxW / width, maxH / height);
       width = Math.max(1, Math.round(width * ratio));
@@ -174,26 +195,23 @@
     lastImgW = width;
     lastImgH = height;
 
-    const freqs = new Float32Array(height);
-    for (let y = 0; y < height; y++) {
-      const t = height === 1 ? 0.5 : 1 - y / (height - 1);
-      freqs[y] = minFreq + t * (maxFreq - minFreq);
-    }
+    const { freqR, freqG, freqB } = makeBandFreqs(minFreq, maxFreq, height);
+    lastFreqR = freqR;
+    lastFreqG = freqG;
+    lastFreqB = freqB;
 
     const pixels = imageData.data;
-    const bright = new Float32Array(width * height);
-    for (let i = 0; i < width * height; i++) {
-      const r = pixels[i * 4], g = pixels[i * 4 + 1], b = pixels[i * 4 + 2];
-      bright[i] = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    }
-
     const samples = Math.floor(duration * sampleRate);
     const samplesPerColumn = samples / width;
     const audio = new Float32Array(samples);
 
-    const phaseInc = new Float32Array(height);
+    const incR = new Float32Array(height);
+    const incG = new Float32Array(height);
+    const incB = new Float32Array(height);
     for (let y = 0; y < height; y++) {
-      phaseInc[y] = (2 * Math.PI * freqs[y]) / sampleRate;
+      incR[y] = (2 * Math.PI * freqR[y]) / sampleRate;
+      incG[y] = (2 * Math.PI * freqG[y]) / sampleRate;
+      incB[y] = (2 * Math.PI * freqB[y]) / sampleRate;
     }
 
     for (let x = 0; x < width; x++) {
@@ -201,18 +219,25 @@
       const endS = Math.floor((x + 1) * samplesPerColumn);
       const colLen = endS - startS;
       if (colLen <= 0) continue;
-      const fade = Math.min(120, Math.floor(colLen / 4));
+      const fade = Math.min(100, Math.floor(colLen / 4));
 
       for (let y = 0; y < height; y++) {
-        const amp = bright[y * width + x];
-        if (amp < 0.05) continue;
-        const inc = phaseInc[y];
+        const pi = (y * width + x) * 4;
+        const aR = pixels[pi] / 255;
+        const aG = pixels[pi + 1] / 255;
+        const aB = pixels[pi + 2] / 255;
+        if (aR + aG + aB < 0.04) continue;
+
         for (let s = startS; s < endS; s++) {
           const local = s - startS;
           let env = 1;
           if (local < fade) env = local / fade;
           else if (local > colLen - fade) env = (colLen - local) / fade;
-          audio[s] += amp * env * Math.sin(inc * s);
+          audio[s] += env * (
+            aR * Math.sin(incR[y] * s) +
+            aG * Math.sin(incG[y] * s) +
+            aB * Math.sin(incB[y] * s)
+          );
         }
       }
     }
@@ -230,9 +255,6 @@
     const ctx = getAudioContext();
     generatedBuffer = ctx.createBuffer(1, samples, sampleRate);
     generatedBuffer.copyToChannel(audio, 0);
-    generatedBuffer._freqs = freqs;
-    generatedBuffer._height = height;
-    generatedBuffer._width = width;
 
     playBtn.disabled = false;
     stopBtn.disabled = false;
@@ -316,6 +338,18 @@
         drawSpectrogramBtn.disabled = false;
         drawImageBtn.disabled = false;
         playImportedBtn.disabled = false;
+        if (!lastFreqR) {
+          const h = lastImgH > 0 ? lastImgH : 140;
+          const bands = makeBandFreqs(
+            parseFloat(minFreqInput.value) || 200,
+            parseFloat(maxFreqInput.value) || 12000,
+            h
+          );
+          lastFreqR = bands.freqR;
+          lastFreqG = bands.freqG;
+          lastFreqB = bands.freqB;
+          lastImgH = h;
+        }
         drawImageFromSound(importedBuffer);
       } catch (err) {
         console.error(err);
@@ -408,11 +442,23 @@
       for (let y = 0; y < height; y++) {
         const bin = Math.floor(((height - 1 - y) / height) * mags.length);
         const v = Math.min(1, (mags[bin] / maxMag) * 2.2);
-        const g = Math.floor(v * 255);
+        let r, g, b;
+        if (v < 0.25) {
+          r = Math.floor(v * 4 * 40); g = 0; b = Math.floor(v * 4 * 140);
+        } else if (v < 0.5) {
+          const t = (v - 0.25) * 4;
+          r = Math.floor(40 + t * 100); g = Math.floor(t * 80); b = Math.floor(140 + t * 60);
+        } else if (v < 0.75) {
+          const t = (v - 0.5) * 4;
+          r = Math.floor(140 + t * 80); g = Math.floor(80 + t * 140); b = Math.floor(200 - t * 40);
+        } else {
+          const t = (v - 0.75) * 4;
+          r = Math.floor(220 + t * 35); g = Math.floor(220 + t * 35); b = Math.floor(160 + t * 95);
+        }
         const idx = (y * width + x) * 4;
-        imgData.data[idx] = g;
+        imgData.data[idx] = r;
         imgData.data[idx + 1] = g;
-        imgData.data[idx + 2] = Math.floor(g * 0.95);
+        imgData.data[idx + 2] = b;
         imgData.data[idx + 3] = 255;
       }
     }
@@ -438,10 +484,20 @@
     const data = buffer.getChannelData(0);
     const duration = buffer.duration;
     const minFreq = lastMinFreq || parseFloat(minFreqInput.value) || 200;
-    const maxFreq = lastMaxFreq || parseFloat(maxFreqInput.value) || 8000;
+    const maxFreq = lastMaxFreq || parseFloat(maxFreqInput.value) || 12000;
 
-    const imgW = lastImgW > 0 ? lastImgW : 200;
-    const imgH = lastImgH > 0 ? lastImgH : 160;
+    const imgW = lastImgW > 0 ? lastImgW : 180;
+    const imgH = lastImgH > 0 ? lastImgH : 140;
+
+    let freqR = lastFreqR;
+    let freqG = lastFreqG;
+    let freqB = lastFreqB;
+    if (!freqR || freqR.length !== imgH) {
+      const bands = makeBandFreqs(minFreq, maxFreq, imgH);
+      freqR = bands.freqR;
+      freqG = bands.freqG;
+      freqB = bands.freqB;
+    }
 
     const fftSize = 8192;
     const hop = Math.max(32, Math.floor(data.length / (imgW * 4)));
@@ -467,32 +523,48 @@
       magnitudes[f] = mags;
     }
 
-    const rowBin = new Int32Array(imgH);
-    for (let y = 0; y < imgH; y++) {
-      const t = imgH === 1 ? 0.5 : 1 - y / (imgH - 1);
-      const freq = minFreq + t * (maxFreq - minFreq);
-      rowBin[y] = Math.max(1, Math.min(numBins - 1, Math.round((freq / sampleRate) * fftSize)));
+    function freqToBin(freq) {
+      return Math.max(1, Math.min(numBins - 1, Math.round((freq / sampleRate) * fftSize)));
     }
 
-    let maxMag = 1e-8;
+    const binR = new Int32Array(imgH);
+    const binG = new Int32Array(imgH);
+    const binB = new Int32Array(imgH);
+    for (let y = 0; y < imgH; y++) {
+      binR[y] = freqToBin(freqR[y]);
+      binG[y] = freqToBin(freqG[y]);
+      binB[y] = freqToBin(freqB[y]);
+    }
+
+    let maxR = 1e-8, maxG = 1e-8, maxB = 1e-8;
     for (let x = 0; x < imgW; x++) {
       const fi = Math.min(numFrames - 1, Math.round((x / Math.max(1, imgW - 1)) * (numFrames - 1)));
       const m = magnitudes[fi];
       for (let y = 0; y < imgH; y++) {
-        const v = m[rowBin[y]];
-        if (v > maxMag) maxMag = v;
+        if (m[binR[y]] > maxR) maxR = m[binR[y]];
+        if (m[binG[y]] > maxG) maxG = m[binG[y]];
+        if (m[binB[y]] > maxB) maxB = m[binB[y]];
       }
     }
 
-    const gamma = 0.55;
-    const cols = new Uint8Array(imgW * imgH);
+    const gamma = 0.5;
+    const cols = new Uint8Array(imgW * imgH * 3);
     for (let x = 0; x < imgW; x++) {
       const fi = Math.min(numFrames - 1, Math.round((x / Math.max(1, imgW - 1)) * (numFrames - 1)));
       const m = magnitudes[fi];
       for (let y = 0; y < imgH; y++) {
-        let v = m[rowBin[y]] / maxMag;
-        v = Math.pow(Math.min(1, Math.max(0, v)), gamma);
-        cols[x * imgH + y] = Math.floor(v * 255);
+        let r = Math.pow(Math.min(1, m[binR[y]] / maxR), gamma);
+        let g = Math.pow(Math.min(1, m[binG[y]] / maxG), gamma);
+        let b = Math.pow(Math.min(1, m[binB[y]] / maxB), gamma);
+        const avg = (r + g + b) / 3;
+        const sat = 1.15;
+        r = Math.min(1, Math.max(0, avg + (r - avg) * sat));
+        g = Math.min(1, Math.max(0, avg + (g - avg) * sat));
+        b = Math.min(1, Math.max(0, avg + (b - avg) * sat));
+        const i = (x * imgH + y) * 3;
+        cols[i] = Math.floor(r * 255);
+        cols[i + 1] = Math.floor(g * 255);
+        cols[i + 2] = Math.floor(b * 255);
       }
     }
 
@@ -511,12 +583,12 @@
 
     function paintColumn(x, withHead) {
       for (let y = 0; y < imgH; y++) {
-        const g = cols[x * imgH + y];
-        drawCtx.fillStyle = "rgb(" + g + "," + g + "," + g + ")";
+        const i = (x * imgH + y) * 3;
+        drawCtx.fillStyle = "rgb(" + cols[i] + "," + cols[i + 1] + "," + cols[i + 2] + ")";
         drawCtx.fillRect(x * scale, y * scale, scale, scale);
       }
       if (withHead) {
-        drawCtx.fillStyle = "rgba(116,185,255,0.9)";
+        drawCtx.fillStyle = "rgba(255,255,255,0.85)";
         drawCtx.fillRect((x + 1) * scale - 1, 0, 2, canvasH);
       }
     }
