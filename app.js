@@ -183,14 +183,29 @@
     lastImgH = height;
 
     const numBins = FFT_SIZE / 2;
-    const logMin = Math.log(minFreq);
-    const logMax = Math.log(maxFreq);
+    let binLow = Math.max(1, Math.round((minFreq / sampleRate) * FFT_SIZE));
+    let binHigh = Math.min(numBins - 1, Math.round((maxFreq / sampleRate) * FFT_SIZE));
+    let binSpan = Math.max(1, binHigh - binLow);
+
+    if (height > binSpan + 1) {
+      const newH = binSpan + 1;
+      const tmp = document.createElement("canvas");
+      tmp.width = width;
+      tmp.height = newH;
+      const tctx = tmp.getContext("2d");
+      tctx.imageSmoothingEnabled = true;
+      tctx.drawImage(imageCanvas, 0, 0, width, newH);
+      imageData = tctx.getImageData(0, 0, width, newH);
+      height = newH;
+      lastImgH = height;
+      imageCanvas.height = height;
+      imageCtx.putImageData(imageData, 0, 0);
+    }
 
     const rowToBin = new Int32Array(height);
     for (let y = 0; y < height; y++) {
       const t = height === 1 ? 0.5 : 1 - y / (height - 1);
-      const freq = Math.exp(logMin + t * (logMax - logMin));
-      rowToBin[y] = Math.max(1, Math.min(numBins - 1, Math.round((freq / sampleRate) * FFT_SIZE)));
+      rowToBin[y] = binLow + Math.round(t * binSpan);
     }
 
     const pixels = imageData.data;
@@ -219,14 +234,15 @@
         if (amp < 0.02) continue;
         const bin = rowToBin[y];
         const phase = (2 * Math.PI * bin * x) / width;
-        const mag = amp;
-        re[bin] = mag * Math.cos(phase);
-        im[bin] = mag * Math.sin(phase);
-        if (bin > 0 && bin < numBins) {
-          re[FFT_SIZE - bin] = re[bin];
-          im[FFT_SIZE - bin] = -im[bin];
-        }
+        re[bin] += amp * Math.cos(phase);
+        im[bin] += amp * Math.sin(phase);
       }
+      for (let bin = 1; bin < numBins; bin++) {
+        re[FFT_SIZE - bin] = re[bin];
+        im[FFT_SIZE - bin] = -im[bin];
+      }
+      re[0] = 0;
+      im[0] = 0;
 
       ifft(re, im);
 
@@ -469,8 +485,6 @@
     const hop = buffer._hop || HOP;
     const numFrames = Math.max(1, Math.floor((data.length - fftSize) / hop) + 1);
     const numBins = fftSize / 2;
-    const logMin = Math.log(minFreq);
-    const logMax = Math.log(maxFreq);
 
     const win = hannWindow(fftSize);
     const magnitudes = new Array(numFrames);
@@ -499,11 +513,13 @@
     drawCanvas.width = canvasW;
     drawCanvas.height = canvasH;
 
+    const binLow = Math.max(1, Math.round((minFreq / sampleRate) * fftSize));
+    const binHigh = Math.min(numBins - 1, Math.round((maxFreq / sampleRate) * fftSize));
+    const binSpan = Math.max(1, binHigh - binLow);
     const rowBin = new Int32Array(imgH);
     for (let y = 0; y < imgH; y++) {
       const t = imgH === 1 ? 0.5 : 1 - y / (imgH - 1);
-      const freq = Math.exp(logMin + t * (logMax - logMin));
-      rowBin[y] = Math.max(1, Math.min(numBins - 1, Math.round((freq / sampleRate) * fftSize)));
+      rowBin[y] = binLow + Math.round(t * binSpan);
     }
 
     let maxMag = 1e-8;
