@@ -16,6 +16,7 @@
   const drawWaveformBtn = document.getElementById("draw-waveform-btn");
   const drawSpectrogramBtn = document.getElementById("draw-spectrogram-btn");
   const drawImageBtn = document.getElementById("draw-image-btn");
+  const exportImageBtn = document.getElementById("export-image-btn");
   const playImportedBtn = document.getElementById("play-imported-btn");
   const drawCanvas = document.getElementById("draw-canvas");
   const drawCtx = drawCanvas.getContext("2d");
@@ -262,6 +263,7 @@
     drawWaveformBtn.disabled = false;
     drawSpectrogramBtn.disabled = false;
     drawImageBtn.disabled = false;
+    if (exportImageBtn) exportImageBtn.disabled = false;
     playImportedBtn.disabled = false;
 
     drawImageFromSound(generatedBuffer);
@@ -337,6 +339,7 @@
         drawWaveformBtn.disabled = false;
         drawSpectrogramBtn.disabled = false;
         drawImageBtn.disabled = false;
+        if (exportImageBtn) exportImageBtn.disabled = false;
         playImportedBtn.disabled = false;
         if (!lastFreqR) {
           const h = lastImgH > 0 ? lastImgH : 140;
@@ -627,4 +630,21 @@
       drawImageBtn.disabled = false;
     }, 20);
   });
+
+  function exportImagePNG() {
+    if (!drawCanvas.width || !drawCanvas.height) return;
+    drawCanvas.toBlob(function (blob) {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "sounddrawer-image.png";
+      a.click();
+      URL.revokeObjectURL(url);
+    }, "image/png");
+  }
+
+  if (exportImageBtn) {
+    exportImageBtn.addEventListener("click", exportImagePNG);
+  }
 })();
