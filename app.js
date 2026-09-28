@@ -30,7 +30,7 @@
   let animFrameId = null;
   let playStartTime = 0;
   let lastMinFreq = 200;
-  let lastMaxFreq = 12000;
+  let lastMaxFreq = 20000;
   let lastFreqR = null;
   let lastFreqG = null;
   let lastFreqB = null;
@@ -168,7 +168,7 @@
 
     const duration = parseFloat(durationInput.value) || 6;
     const minFreq = parseFloat(minFreqInput.value) || 200;
-    const maxFreq = parseFloat(maxFreqInput.value) || 12000;
+    const maxFreq = parseFloat(maxFreqInput.value) || 20000;
     const sampleRate = parseInt(sampleRateSelect.value, 10) || 44100;
     lastMinFreq = minFreq;
     lastMaxFreq = maxFreq;
@@ -342,7 +342,7 @@
           const h = lastImgH > 0 ? lastImgH : 140;
           const bands = makeBandFreqs(
             parseFloat(minFreqInput.value) || 200,
-            parseFloat(maxFreqInput.value) || 12000,
+            parseFloat(maxFreqInput.value) || 20000,
             h
           );
           lastFreqR = bands.freqR;
@@ -484,7 +484,7 @@
     const data = buffer.getChannelData(0);
     const duration = buffer.duration;
     const minFreq = lastMinFreq || parseFloat(minFreqInput.value) || 200;
-    const maxFreq = lastMaxFreq || parseFloat(maxFreqInput.value) || 12000;
+    const maxFreq = lastMaxFreq || parseFloat(maxFreqInput.value) || 20000;
 
     const imgW = lastImgW > 0 ? lastImgW : 180;
     const imgH = lastImgH > 0 ? lastImgH : 140;
